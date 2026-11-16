@@ -1,7 +1,6 @@
 package com.booknplay.user.config;
 
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 
 @Configuration
