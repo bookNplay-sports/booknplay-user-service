@@ -9,7 +9,6 @@ import com.booknplay.user.exception.InvalidResetTokenException;
 import com.booknplay.user.exception.UserNotFoundException;
 import com.booknplay.user.repository.PasswordResetRepository;
 import com.booknplay.user.repository.UserRepository;
-
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
