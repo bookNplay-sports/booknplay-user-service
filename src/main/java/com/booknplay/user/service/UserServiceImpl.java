@@ -1,5 +1,7 @@
 package com.booknplay.user.service;
 
+import com.booknplay.user.client.NotificationClient;
+import com.booknplay.user.dto.EmailNotificationRequest;
 import com.booknplay.user.dto.UserDto;
 import com.booknplay.user.entity.PasswordReset;
 import com.booknplay.user.entity.User;
@@ -20,15 +22,15 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final PasswordResetRepository passwordResetRepository;
-    private final EmailService emailService;
+    private final NotificationClient notificationClient;
     public UserServiceImpl(UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
-                           PasswordResetRepository passwordResetRepository,
-                           EmailService emailService) {
+                           PasswordResetRepository passwordResetRepository
+            , NotificationClient notificationClient) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordResetRepository = passwordResetRepository;
-        this.emailService = emailService;
+        this.notificationClient = notificationClient;
     }
     @Override
     public UserDto register(User user) {
@@ -37,7 +39,11 @@ public class UserServiceImpl implements UserService {
         }
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         User savedUser = userRepository.save(user);
-        emailService.sendRegistrationEmail(user.getEmail(), user.getName());
+        EmailNotificationRequest request = new EmailNotificationRequest();
+        request.setTo(user.getEmail());
+        request.setSubject("Registration Successful");
+        request.setTemplateType("REGISTRATION");
+        notificationClient.sendEmail(request);
         return toUserDto(savedUser);
     }
     @Override
@@ -59,20 +65,27 @@ public class UserServiceImpl implements UserService {
     }
     @Override
     public UserDto updateProfile(Long userId, User updatedUser) {
+
         User existingUser = userRepository.findById(userId)
                 .orElseThrow(() ->
                         new UserNotFoundException("User not found"));
         existingUser.setName(updatedUser.getName());
         existingUser.setPhone(updatedUser.getPhone());
         User savedUser = userRepository.save(existingUser);
-        emailService.sendProfileUpdateEmail(savedUser.getEmail(), savedUser.getName());
+        EmailNotificationRequest request = new EmailNotificationRequest();
+        request.setTo(savedUser.getEmail());
+        request.setSubject("Profile Updated Successfully");
+        request.setTemplateType("PROFILE_UPDATE");
+        request.setName(savedUser.getName());
+        notificationClient.sendEmail(request);
         return toUserDto(savedUser);
     }
     @Override
+
     public void resetPassword(String email) {
+
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() ->
-                        new UserNotFoundException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException("User not found"));
         passwordResetRepository.deleteByUserId(user.getId());
         PasswordReset resetToken = PasswordReset.builder()
                 .token(UUID.randomUUID().toString())
@@ -80,8 +93,16 @@ public class UserServiceImpl implements UserService {
                 .expiryDate(LocalDateTime.now().plusMinutes(15))
                 .build();
         passwordResetRepository.save(resetToken);
-        emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), resetToken.getToken());
+
+        EmailNotificationRequest request = new EmailNotificationRequest();
+        request.setTo(user.getEmail());
+        request.setSubject("Password Reset Request");
+        request.setTemplateType("PASSWORD_RESET");
+        request.setResetToken(resetToken.getToken());
+        notificationClient.sendEmail(request);
+
     }
+
     @Override
 
     public void confirmPasswordReset(String token, String newPassword) {

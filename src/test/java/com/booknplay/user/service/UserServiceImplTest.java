@@ -1,5 +1,7 @@
 package com.booknplay.user.service;
 
+import com.booknplay.user.client.NotificationClient;
+import com.booknplay.user.dto.EmailNotificationRequest;
 import com.booknplay.user.dto.UserDto;
 import com.booknplay.user.entity.PasswordReset;
 import com.booknplay.user.entity.User;
@@ -17,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
@@ -28,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,14 +51,14 @@ public class UserServiceImplTest {
     private PasswordResetRepository passwordResetRepository;
 
     @Mock
-    private EmailService emailService;
+    private NotificationClient notificationClient;
 
     private UserServiceImpl userService;
 
     @BeforeEach
     void setUp() {
         userService = new UserServiceImpl(
-                userRepository, passwordEncoder, passwordResetRepository, emailService);
+                userRepository, passwordEncoder, passwordResetRepository, notificationClient);
     }
 
     @Test
@@ -63,13 +67,19 @@ public class UserServiceImplTest {
         when(userRepository.existsByEmail(user.getEmail())).thenReturn(false);
         when(passwordEncoder.encode("plain-password")).thenReturn("encoded-password");
         when(userRepository.save(user)).thenReturn(user);
+        when(notificationClient.sendEmail(any(EmailNotificationRequest.class)))
+                .thenReturn(ResponseEntity.ok("sent"));
 
         UserDto result = userService.register(user);
 
         assertUserDto(result);
         assertEquals("encoded-password", user.getPassword());
         verify(userRepository).save(user);
-        verify(emailService).sendRegistrationEmail(user.getEmail(), user.getName());
+        verify(notificationClient).sendEmail(argThat(request ->
+                "alex@example.com".equals(request.getTo())
+                        && "Registration Successful".equals(request.getSubject())
+                        && "REGISTRATION".equals(request.getTemplateType())
+        ));
     }
 
     @Test
@@ -80,7 +90,7 @@ public class UserServiceImplTest {
         assertThrows(DuplicateEmailException.class, () -> userService.register(user));
 
         verify(userRepository, never()).save(any(User.class));
-        verifyNoInteractions(passwordEncoder, emailService);
+        verifyNoInteractions(passwordEncoder, notificationClient);
     }
 
     @Test
@@ -140,6 +150,8 @@ public class UserServiceImplTest {
         User updates = User.builder().name("Updated Name").phone("555-0101").build();
         when(userRepository.findById(42L)).thenReturn(Optional.of(existingUser));
         when(userRepository.save(existingUser)).thenReturn(existingUser);
+        when(notificationClient.sendEmail(any(EmailNotificationRequest.class)))
+                .thenReturn(ResponseEntity.ok("sent"));
 
         UserDto result = userService.updateProfile(42L, updates);
 
@@ -147,7 +159,12 @@ public class UserServiceImplTest {
         assertEquals("555-0101", result.getPhone());
         assertEquals("alex@example.com", result.getEmail());
         assertEquals("encoded-password", existingUser.getPassword());
-        verify(emailService).sendProfileUpdateEmail("alex@example.com", "Updated Name");
+        verify(notificationClient).sendEmail(argThat(request ->
+                "alex@example.com".equals(request.getTo())
+                        && "Profile Updated Successfully".equals(request.getSubject())
+                        && "PROFILE_UPDATE".equals(request.getTemplateType())
+                        && "Updated Name".equals(request.getName())
+        ));
     }
 
     @Test
@@ -158,13 +175,15 @@ public class UserServiceImplTest {
                 () -> userService.updateProfile(42L, User.builder().build()));
 
         verify(userRepository, never()).save(any(User.class));
-        verifyNoInteractions(emailService);
+        verifyNoInteractions(notificationClient);
     }
 
     @Test
     void resetPasswordReplacesOldTokenAndSendsEmailWithNewToken() {
         User user = user();
         when(userRepository.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        when(notificationClient.sendEmail(any(EmailNotificationRequest.class)))
+                .thenReturn(ResponseEntity.ok("sent"));
 
         userService.resetPassword(user.getEmail());
 
@@ -178,8 +197,12 @@ public class UserServiceImplTest {
         UUID.fromString(savedToken.getToken());
         assertTrue(savedToken.getExpiryDate().isAfter(LocalDateTime.now().plusMinutes(14)));
         assertTrue(savedToken.getExpiryDate().isBefore(LocalDateTime.now().plusMinutes(16)));
-        verify(emailService).sendPasswordResetEmail(
-                user.getEmail(), user.getName(), savedToken.getToken());
+        verify(notificationClient).sendEmail(argThat(request ->
+                user.getEmail().equals(request.getTo())
+                        && "Password Reset Request".equals(request.getSubject())
+                        && "PASSWORD_RESET".equals(request.getTemplateType())
+                        && savedToken.getToken().equals(request.getResetToken())
+        ));
     }
 
     @Test
@@ -189,7 +212,7 @@ public class UserServiceImplTest {
         assertThrows(UserNotFoundException.class,
                 () -> userService.resetPassword("missing@example.com"));
 
-        verifyNoInteractions(passwordResetRepository, emailService);
+        verifyNoInteractions(passwordResetRepository, notificationClient);
     }
 
     @Test
